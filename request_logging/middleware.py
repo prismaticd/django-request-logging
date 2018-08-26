@@ -13,11 +13,13 @@ except ImportError:
 DEFAULT_LOG_LEVEL = logging.DEBUG
 DEFAULT_COLORIZE = True
 DEFAULT_MAX_BODY_LENGTH = 50000  # log no more than 3k bytes of content
+DEFAULT_HTTP_4XX_AS_ERROR = True
 SETTING_NAMES = {
     'log_level': 'REQUEST_LOGGING_DATA_LOG_LEVEL',
     'legacy_colorize': 'REQUEST_LOGGING_DISABLE_COLORIZE',
     'colorize': 'REQUEST_LOGGING_ENABLE_COLORIZE',
-    'max_body_length': 'REQUEST_LOGGING_MAX_BODY_LENGTH'
+    'max_body_length': 'REQUEST_LOGGING_MAX_BODY_LENGTH',
+    'http_4xx_as_error': 'REQUEST_LOGGING_HTTP_4XX_AS_ERROR',
 }
 BINARY_REGEX = re.compile(r'(.+Content-Type:.*?)(\S+)/(\S+)(?:\r\n)*(.+)', re.S | re.I)
 BINARY_TYPES = ('image', 'application')
@@ -66,7 +68,7 @@ class LoggingMiddleware(object):
         if self.log_level not in [logging.NOTSET, logging.DEBUG, logging.INFO,
                                   logging.WARNING, logging.ERROR, logging.CRITICAL]:
             raise ValueError("Unknown log level({}) in setting({})".format(self.log_level, SETTING_NAMES['log_level']))
-
+        self.is_http_4xx_error = getattr(settings, SETTING_NAMES['http_4xx_as_error'], DEFAULT_HTTP_4XX_AS_ERROR)
         # TODO: remove deprecated legacy settings
         enable_colorize = getattr(settings, SETTING_NAMES['legacy_colorize'], None)
         if enable_colorize is None:
@@ -168,7 +170,7 @@ class LoggingMiddleware(object):
             return response
         logging_context = self._get_logging_context(request, response)
 
-        if response.status_code in range(500, 600):
+        if response.status_code in range(400 if self.is_http_4xx_error else 500, 600):
             self.logger.log_error(logging.INFO, resp_log, logging_context)
             self._log_resp(logging.ERROR, response, logging_context)
         else:

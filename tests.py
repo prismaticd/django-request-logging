@@ -12,7 +12,7 @@ from django.http import HttpResponse, StreamingHttpResponse
 
 import request_logging
 from request_logging.middleware import LoggingMiddleware, DEFAULT_LOG_LEVEL, DEFAULT_COLORIZE, DEFAULT_MAX_BODY_LENGTH,\
-    NO_LOGGING_MSG
+    NO_LOGGING_MSG, DEFAULT_HTTP_4XX_AS_ERROR
 
 settings.configure()
 
@@ -305,6 +305,40 @@ class LogSettingsMaxLengthTestCase(BaseLogTestCase):
     def test_invalid_max_body_length(self, mock_log):
         with self.assertRaises(ValueError):
             LoggingMiddleware()
+
+
+@mock.patch.object(request_logging.middleware, "request_logger")
+class LogSettingsHttp4xxAsErrorTestCase(BaseLogTestCase):
+    def setUp(self):
+        from django.urls import set_urlconf
+        set_urlconf('test_urls')
+        self.factory = RequestFactory()
+        self.request = self.factory.get("/not-a-valid-url")
+
+        response = mock.MagicMock()
+        response.status_code = 404
+        response.get.return_value = 'application/json'
+        response._headers = {'test_headers': 'test_headers'}
+
+        self.response_404 = response
+
+    def test_logging_default_http_4xx_error(self, mock_log):
+        middleware = LoggingMiddleware()
+        middleware.process_response(self.request, self.response_404)
+        self.assertEqual(DEFAULT_HTTP_4XX_AS_ERROR, True)
+        self._assert_logged_with_level(mock_log, logging.ERROR)
+
+    @override_settings(REQUEST_LOGGING_HTTP_4XX_AS_ERROR=True)
+    def test_logging_http_4xx_error(self, mock_log):
+        middleware = LoggingMiddleware()
+        middleware.process_response(self.request, self.response_404)
+        self._assert_logged_with_level(mock_log, logging.ERROR)
+
+    @override_settings(REQUEST_LOGGING_HTTP_4XX_AS_ERROR=False)
+    def test_logging_http_4xx_not_error(self, mock_log):
+        middleware = LoggingMiddleware()
+        middleware.process_response(self.request, self.response_404)
+        self._assert_logged_with_level(mock_log, logging.INFO)
 
 
 @mock.patch.object(request_logging.middleware, "request_logger")
